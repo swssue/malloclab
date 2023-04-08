@@ -264,7 +264,7 @@ void *mm_realloc(void *ptr, size_t size)
     if (newptr == NULL)
       return NULL;
     
-    copySize = *(size_t *)((char *)oldptr - SIZE_T_SIZE);
+    copySize = GET_SIZE(HDRP(oldptr))-2 *WSIZE - SIZE_T_SIZE;
     // copySize = *(size_t *)((char *)GET_SIZE(oldptr) -2 *WSIZE - SIZE_T_SIZE);
     if (size < copySize)
       copySize = size;
