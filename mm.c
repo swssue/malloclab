@@ -248,6 +248,7 @@ static void *find_fit(size_t asize){
     void *bp;
     // printf("find: %d\n",asize);
     // for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
+    // 한 바퀴 돌아서 initial 블록의 NULL 값으로 돌아온 경우 
     for (bp = root; bp != NULL; bp = GET_NEXT_Addr(bp)) {
         // printf("bp: %u\n", bp);
         // printf("size: %d\n", GET_SIZE(HDRP(bp)));
@@ -296,8 +297,10 @@ void front_root(void* bp){
 void remove_free(void* bp) {
     if (bp!=root){
         PUT_NEXT_Addr(GET_PREV_Addr(bp),GET_NEXT_Addr(bp));
+        // 삭제 했는데 남은게 NULL 인 경우 
         if (GET_NEXT_Addr(bp)!=NULL)
             PUT_PREV_Addr(GET_NEXT_Addr(bp),GET_PREV_Addr(bp));
+    //처음 초기화시 사용
     }else{
         root = GET_NEXT_Addr(bp);
     }
