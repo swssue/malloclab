@@ -45,6 +45,7 @@ team_t team = {
 #define CHUNKSIZE (1<<12) 
 #define WSIZE   4
 #define DSIZE   8
+#define LISTLIMIT 12
 
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
 
@@ -78,12 +79,14 @@ static void place(void *bp, size_t asize);
 static void *extend_heap(size_t words);
 static void *coalesce(void *bp);
 
-
+// 포인터 주소를 담을 리스트 만들기
+void *free_lists[LISTLIMIT];
 void *heap_listp;
-
 //루트 지정
 void *root;
 
+// asize 크기에 맞는 인덱스 봔한
+int Block_size(size_t asize);
 void front_root(void* bp);
 void remove_free(void* bp);
 
@@ -97,6 +100,12 @@ int mm_init(void)
     if ((heap_listp = mem_sbrk(4*WSIZE)) == (void *)-1)
         return -1;
     
+	/*root 포인터 초기화*/
+    for (int i=0; i<LISTLIMIT;i++){
+        free_lists[i] = NULL;
+    }
+	
+	
     // heap_list는 처음 unsigned 부분을 카리키고 있음    
     PUT(heap_listp, 0); /* Alignment padding */
     PUT(heap_listp + (1*WSIZE), PACK(DSIZE, 1)); /* Prologue header */
@@ -214,7 +223,7 @@ void *mm_malloc(size_t size)
         asize = 2*DSIZE;
     else
         asize = DSIZE * ((size + (DSIZE) + (DSIZE-1)) / DSIZE);
-
+    // printf("asize : %d\n\n",asize);
     /* Search the free list for a fit */
     if ((bp = find_fit(asize)) != NULL) {
         place(bp, asize);
@@ -246,14 +255,13 @@ void *mm_malloc(size_t size)
 static void *find_fit(size_t asize){
 /* First-fit search */
     void *bp;
-    // printf("find: %d\n",asize);
-    // for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)) {
+	
+	root = free_lists[Block_size(asize)];
+
     // 한 바퀴 돌아서 initial 블록의 NULL 값으로 돌아온 경우 
     for (bp = root; bp != NULL; bp = GET_NEXT_Addr(bp)) {
-        // printf("bp: %u\n", bp);
-        // printf("size: %d\n", GET_SIZE(HDRP(bp)));
-        // printf("alloc: %d\n\n", GET_ALLOC(HDRP(bp)));
         if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
+            
             return bp;
             }
         }
@@ -272,9 +280,10 @@ static void place(void *bp, size_t asize)
         PUT(HDRP(bp), PACK(asize, 1));
         PUT(FTRP(bp), PACK(asize, 1));
         bp = NEXT_BLKP(bp);
-        front_root(bp);
+        
         PUT(HDRP(bp), PACK(csize-asize, 0));
         PUT(FTRP(bp), PACK(csize-asize, 0));
+        front_root(bp);
     }
     //쪼개는게 불가능
     else {
@@ -286,23 +295,26 @@ static void place(void *bp, size_t asize)
 }
 // root 붙여주기
 void front_root(void* bp){
+    int temp = Block_size(GET_SIZE(HDRP(bp)));
+	root = free_lists[temp];
     PUT_NEXT_Addr(bp,root);
     if (root!=NULL){
         PUT_PREV_Addr(root, bp);
     }
-    
-    root = bp;
+    free_lists[temp] = bp;
 }
 // free 블록 빼기
 void remove_free(void* bp) {
+    int temp = Block_size(GET_SIZE(HDRP(bp)));
+    root = free_lists[temp];
     if (bp!=root){
         PUT_NEXT_Addr(GET_PREV_Addr(bp),GET_NEXT_Addr(bp));
         // 삭제 했는데 남은게 NULL 인 경우 
         if (GET_NEXT_Addr(bp)!=NULL)
             PUT_PREV_Addr(GET_NEXT_Addr(bp),GET_PREV_Addr(bp));
-    //처음 초기화시 사용
+    
     }else{
-        root = GET_NEXT_Addr(bp);
+        free_lists[temp] = GET_NEXT_Addr(bp);
     }
 }
 
@@ -336,4 +348,16 @@ void *mm_realloc(void *ptr, size_t size)
     memcpy(newptr, oldptr, size);
     mm_free(oldptr);
     return newptr;
+}
+
+/*현재 블록의 범위 확인*/
+int Block_size(size_t asize){
+    int cnt = 0;
+    for (int i=0;i<LISTLIMIT;i++){
+        if (asize < (1<<(i+4))){
+            return cnt;
+        }
+        cnt+=1;
+    }
+    return cnt+1;
 }
