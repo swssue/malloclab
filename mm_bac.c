@@ -166,7 +166,7 @@ static void *coalesce(void *bp)
         // 기존 블록 할당 완료 후 root와 연결
         size += GET_SIZE(HDRP(PREV_BLKP(bp)));
         PUT(FTRP(bp), PACK(size, 0));
-        PUT(HDRP((bp)), PACK(size, 0));
+        PUT(HDRP(bp), PACK(size, 0));
     }
     
     else { /* Case 4 */

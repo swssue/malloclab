@@ -45,7 +45,7 @@ team_t team = {
 #define CHUNKSIZE (1<<12) 
 #define WSIZE   4
 #define DSIZE   8
-#define LISTLIMIT 6
+#define LISTLIMIT 16
 
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
 
@@ -114,7 +114,7 @@ int mm_init(void)
     // heap-listp 는 padding header 과 footer 사이를 가리키고 있음
     heap_listp += (2*WSIZE);
 
-    // NULL을 가리키고 있음
+    // 현재 가리키고 있는 포인터로 사용
     root = NULL;
 
     /* Extend the empty heap with a free block of CHUNKSIZE bytes */
@@ -124,7 +124,7 @@ int mm_init(void)
     return 0;
 }
 
-// words : 블록의 갯수
+// 현재 확장해야 하는 블록의 갯수
 static void *extend_heap(size_t words)
 {
 char *bp;
@@ -132,6 +132,7 @@ size_t size;
 
 /* Allocate an even number of words to maintain alignment */
 size = (words % 2) ? (words+1) * WSIZE : words * WSIZE;
+
 if ((long)(bp = mem_sbrk(size)) == -1)
     return NULL;
 
@@ -155,6 +156,7 @@ PUT(FTRP(bp), PACK(size, 0));
 coalesce(bp);
 }
 
+// 블럭간 연결 담당
 static void *coalesce(void *bp)
 {
     // free할 블록의 좌우를 확인해서
@@ -164,8 +166,7 @@ static void *coalesce(void *bp)
     size_t next_alloc = GET_ALLOC(HDRP(NEXT_BLKP(bp)));
     // 현재 블록의 사이즈
     size_t size = GET_SIZE(HDRP(bp));
-    // void* next = GET_NEXT_Addr(bp);
-    // void* prev = GET_PREV_Addr(bp);
+
     if (prev_alloc && next_alloc) { /* Case 1 */
         front_root(bp);
         return bp;
@@ -198,7 +199,6 @@ static void *coalesce(void *bp)
         front_root(bp);
     }
 
-        // bp = PREV_BLKP(bp);
     return bp;
 }
 
@@ -221,50 +221,39 @@ void *mm_malloc(size_t size)
         asize = 2*DSIZE;
     else
         asize = DSIZE * ((size + (DSIZE) + (DSIZE-1)) / DSIZE);
-    // printf("asize : %d\n\n",asize);
+
+
     /* Search the free list for a fit */
-    
     if ((bp = find_fit(asize)) != NULL) {
         place(bp, asize);
         return bp;
     }
-    // printf("max : %u\n", mem_heap_hi());
+
     /* No fit found. Get more memory and place the block */
     extendsize = MAX(asize,CHUNKSIZE);
 
     if ((bp = extend_heap(extendsize/WSIZE)) == NULL)
         return NULL;
 
-    // printf("bp: %u\n\n", bp);
     place(bp, asize);
     return bp;
 }
-    // int newsize = ALIGN(size + SIZE_T_SIZE);
-    // void *p = mem_sbrk(newsize);
-    
-    // if (p == (void *)-1)
-	//     return NULL;
-    
-    // else {
-    //     *(size_t *)p = size;
-    //     return (void *)((char *)p + SIZE_T_SIZE);
-    // }
 
-
+// 블럭 사이즈에 맞는 가용 가능 리스트 찾기
 static void *find_fit(size_t asize){
 /* First-fit search */
     void *bp;
-
-	root = free_lists[Block_size(asize)];
-    // printf("asize : %d\n",asize);
-    // printf("Block_size(asize) : %d\n\n",Block_size(asize));
-
-    // 한 바퀴 돌아서 initial 블록의 NULL 값으로 돌아온 경우 
-    for (bp = root; bp != NULL; bp = GET_NEXT_Addr(bp)) {
-        if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
-            return bp;
+    int temp = Block_size(asize);
+    for (int i=temp; i<LISTLIMIT;i++){
+        // 연결 리스트 
+	    root = free_lists[i];
+        for (bp = root; bp != NULL; bp = GET_NEXT_Addr(bp)) {
+            if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
+                return bp;
+                }
             }
-        }
+
+    }
     return NULL; /* No fit */
 }
 
@@ -309,7 +298,7 @@ void front_root(void* bp){
 void remove_free(void* bp) {
     int temp = Block_size(GET_SIZE(HDRP(bp)));
     root = free_lists[temp];
-
+k
     if (bp!=root){
         PUT_NEXT_Addr(GET_PREV_Addr(bp),GET_NEXT_Addr(bp));
         // 삭제 했는데 남은게 NULL 인 경우 
@@ -321,15 +310,6 @@ void remove_free(void* bp) {
     }
     
 }
-
-// void mm_free(void *ptr)
-// {
-// size_t size = GET_SIZE(HDRP(bp));
-// PUT(HDRP(bp), PACK(size, 0));
-// PUT(FTRP(bp), PACK(size, 0));
-
-// coalesce(bp);
-// }
 
 /*
  * mm_realloc - Implemented simply in terms of mm_malloc and mm_free
@@ -357,7 +337,7 @@ void *mm_realloc(void *ptr, size_t size)
 /*현재 블록의 범위 확인*/
 int Block_size(size_t asize){
     int idx = 0;
-    for (int i=4; i<LISTLIMIT-1;i++){
+    for (int i=4; i<LISTLIMIT;i++){
         if (asize < 1<<i){
             break;
         }
