@@ -153,12 +153,11 @@ static void *coalesce(void *bp)
 
     else if (prev_alloc && !next_alloc) { /* Case 2 */
         // 기존 블록에 연결되어 있던 연결 끊기
-        remove_free(bp);
+        remove_free(NEXT_BLKP(bp));
         size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
         PUT(HDRP(bp), PACK(size, 0));
         PUT(FTRP(bp), PACK(size,0));
-        // 새로운 블록 bp root와 연결
-        add_free(bp);
+
     }
 
     else if (!prev_alloc && next_alloc) { /* Case 3 */
@@ -167,9 +166,7 @@ static void *coalesce(void *bp)
         // 기존 블록 할당 완료 후 root와 연결
         size += GET_SIZE(HDRP(PREV_BLKP(bp)));
         PUT(FTRP(bp), PACK(size, 0));
-        PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
-        bp = PREV_BLKP(bp);
-        add_free(bp);
+        PUT(HDRP((bp)), PACK(size, 0));
     }
     
     else { /* Case 4 */
@@ -178,12 +175,11 @@ static void *coalesce(void *bp)
         remove_free(NEXT_BLKP(bp));
         // root와 연결
         size += GET_SIZE(HDRP(PREV_BLKP(bp))) + GET_SIZE(FTRP(NEXT_BLKP(bp)));
+        bp = PREV_BLKP(bp);
         PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
         PUT(FTRP(NEXT_BLKP(bp)), PACK(size, 0));
-        bp = PREV_BLKP(bp);
-        add_free(bp);
     }
-
+    add_free(bp);
     return bp;
 }
 
@@ -238,8 +234,9 @@ void *mm_malloc(size_t size)
 static void *find_fit(size_t asize){
 /* First-fit search */
     void *bp;
+     printf("asize : %d\n",asize);
     // printf("find: %d\n",asize);
-    for (bp = GET_NEXT_ADDR(heap_listp); bp!=NULL; bp = GET_NEXT_ADDR(bp)) {
+    for (bp = free_listp; bp!=NULL; bp = GET_NEXT_ADDR(bp)) {
         // printf("bp: %u\n", bp);
         // printf("size: %d\n", GET_SIZE(HDRP(bp)));
         // printf("alloc: %d\n\n", GET_ALLOC(HDRP(bp)));
@@ -257,8 +254,9 @@ static void place(void *bp, size_t asize)
     // printf("csize : %d\n",csize);
     // printf("asize : %d\n\n",asize);
     // 쪼갤 필요 0
-    remove_free(bp);
+    
     if ((csize - asize) >= (2*DSIZE)) {
+        remove_free(bp);
         PUT(HDRP(bp), PACK(asize, 1));
         PUT(FTRP(bp), PACK(asize, 1));
         bp = NEXT_BLKP(bp);
@@ -269,6 +267,7 @@ static void place(void *bp, size_t asize)
     }
     //쪼갤 필요 X
     else {
+        remove_free(bp);
         PUT(HDRP(bp), PACK(csize, 1));
         PUT(FTRP(bp), PACK(csize, 1));
     }
@@ -280,18 +279,17 @@ void remove_free(void* bp){
         PUT_PREV_ADDR(GET_NEXT_ADDR(bp),NULL);
         free_listp = GET_NEXT_ADDR(bp);
     }
-    else {
-        // 프리 리스트 사이 값을 없앨 때,
+    else{
         PUT_NEXT_ADDR(GET_PREV_ADDR(bp),GET_NEXT_ADDR(bp));
         PUT_PREV_ADDR(GET_NEXT_ADDR(bp),GET_PREV_ADDR(bp));
     }
-}
+}  
 
 void add_free(void* bp){
     //root에 연결되는 경우
     PUT_NEXT_ADDR(bp,free_listp);
-    PUT_PREV_ADDR(free_listp,bp);
     PUT_PREV_ADDR(bp,NULL);
+    PUT_PREV_ADDR(free_listp,bp);
     free_listp = bp;
 }
 

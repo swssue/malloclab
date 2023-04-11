@@ -45,7 +45,7 @@ team_t team = {
 #define CHUNKSIZE (1<<12) 
 #define WSIZE   4
 #define DSIZE   8
-#define LISTLIMIT 12
+#define LISTLIMIT 6
 
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
 
@@ -82,6 +82,7 @@ static void *coalesce(void *bp);
 // 포인터 주소를 담을 리스트 만들기
 void *free_lists[LISTLIMIT];
 void *heap_listp;
+
 //루트 지정
 void *root;
 
@@ -95,7 +96,6 @@ void remove_free(void* bp);
  */
 int mm_init(void)
 {
-    
     /* Create the initial empty heap */
     if ((heap_listp = mem_sbrk(4*WSIZE)) == (void *)-1)
         return -1;
@@ -105,14 +105,12 @@ int mm_init(void)
         free_lists[i] = NULL;
     }
 	
-	
     // heap_list는 처음 unsigned 부분을 카리키고 있음    
     PUT(heap_listp, 0); /* Alignment padding */
     PUT(heap_listp + (1*WSIZE), PACK(DSIZE, 1)); /* Prologue header */
     PUT(heap_listp + (2*WSIZE), PACK(DSIZE, 1)); /* Prologue footer */
     PUT(heap_listp + (3*WSIZE), PACK(0, 1)); /* Epilogue header */
  
-
     // heap-listp 는 padding header 과 footer 사이를 가리키고 있음
     heap_listp += (2*WSIZE);
 
@@ -159,7 +157,6 @@ coalesce(bp);
 
 static void *coalesce(void *bp)
 {
-
     // free할 블록의 좌우를 확인해서
     // prev_alloc : 현재 블록 포인트의 앞 블록이 할당 됨/할당 안됨 상태
     size_t prev_alloc = GET_ALLOC(HDRP(PREV_BLKP(bp)));
@@ -214,6 +211,7 @@ void *mm_malloc(size_t size)
     size_t asize; /* Adjusted block size */
     size_t extendsize; /* Amount to extend heap if no fit */
     char *bp;
+
     /* Ignore spurious requests */
     if (size == 0)
         return NULL;
@@ -225,6 +223,7 @@ void *mm_malloc(size_t size)
         asize = DSIZE * ((size + (DSIZE) + (DSIZE-1)) / DSIZE);
     // printf("asize : %d\n\n",asize);
     /* Search the free list for a fit */
+    
     if ((bp = find_fit(asize)) != NULL) {
         place(bp, asize);
         return bp;
@@ -251,17 +250,18 @@ void *mm_malloc(size_t size)
     //     return (void *)((char *)p + SIZE_T_SIZE);
     // }
 
-//
+
 static void *find_fit(size_t asize){
 /* First-fit search */
     void *bp;
-	
+
 	root = free_lists[Block_size(asize)];
+    // printf("asize : %d\n",asize);
+    // printf("Block_size(asize) : %d\n\n",Block_size(asize));
 
     // 한 바퀴 돌아서 initial 블록의 NULL 값으로 돌아온 경우 
     for (bp = root; bp != NULL; bp = GET_NEXT_Addr(bp)) {
         if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))) {
-            
             return bp;
             }
         }
@@ -297,16 +297,19 @@ static void place(void *bp, size_t asize)
 void front_root(void* bp){
     int temp = Block_size(GET_SIZE(HDRP(bp)));
 	root = free_lists[temp];
+
     PUT_NEXT_Addr(bp,root);
     if (root!=NULL){
         PUT_PREV_Addr(root, bp);
     }
     free_lists[temp] = bp;
 }
+
 // free 블록 빼기
 void remove_free(void* bp) {
     int temp = Block_size(GET_SIZE(HDRP(bp)));
     root = free_lists[temp];
+
     if (bp!=root){
         PUT_NEXT_Addr(GET_PREV_Addr(bp),GET_NEXT_Addr(bp));
         // 삭제 했는데 남은게 NULL 인 경우 
@@ -316,6 +319,7 @@ void remove_free(void* bp) {
     }else{
         free_lists[temp] = GET_NEXT_Addr(bp);
     }
+    
 }
 
 // void mm_free(void *ptr)
@@ -352,12 +356,17 @@ void *mm_realloc(void *ptr, size_t size)
 
 /*현재 블록의 범위 확인*/
 int Block_size(size_t asize){
-    int cnt = 0;
-    for (int i=0;i<LISTLIMIT;i++){
-        if (asize < (1<<(i+4))){
-            return cnt;
+    int idx = 0;
+    for (int i=4; i<LISTLIMIT-1;i++){
+        if (asize < 1<<i){
+            break;
         }
-        cnt+=1;
+        idx++;
     }
-    return cnt+1;
+
+    // while ((idx < LISTLIMIT - 1) && (asize > 1)) {
+    //     asize >>= 1;
+    //     idx++;
+    // }
+    return idx;
 }
