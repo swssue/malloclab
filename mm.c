@@ -298,7 +298,7 @@ void front_root(void* bp){
 void remove_free(void* bp) {
     int temp = Block_size(GET_SIZE(HDRP(bp)));
     root = free_lists[temp];
-k
+
     if (bp!=root){
         PUT_NEXT_Addr(GET_PREV_Addr(bp),GET_NEXT_Addr(bp));
         // 삭제 했는데 남은게 NULL 인 경우 
