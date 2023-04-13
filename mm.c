@@ -102,7 +102,7 @@ int mm_init(void)
     
 	/*root 포인터 초기화*/
     for (int i=0; i<LISTLIMIT;i++){
-        free_lists[i] = NULL;
+        free_lists[i] = 0;
     }
 	
     // heap_list는 처음 unsigned 부분을 카리키고 있음    
@@ -111,6 +111,7 @@ int mm_init(void)
     PUT(heap_listp + (2*WSIZE), PACK(DSIZE, 1)); /* Prologue footer */
     PUT(heap_listp + (3*WSIZE), PACK(0, 1)); /* Epilogue header */
  
+
     // heap-listp 는 padding header 과 footer 사이를 가리키고 있음
     heap_listp += (2*WSIZE);
 
@@ -127,6 +128,7 @@ int mm_init(void)
 // 현재 확장해야 하는 블록의 갯수
 static void *extend_heap(size_t words)
 {
+    // printf("2\n");
 char *bp;
 size_t size;
 
@@ -156,47 +158,46 @@ PUT(FTRP(bp), PACK(size, 0));
 coalesce(bp);
 }
 
-// 블럭간 연결 담당
+// 블럭 간 연결 담당
 static void *coalesce(void *bp)
 {
-    // free할 블록의 좌우를 확인해서
-    // prev_alloc : 현재 블록 포인트의 앞 블록이 할당 됨/할당 안됨 상태
-    size_t prev_alloc = GET_ALLOC(HDRP(PREV_BLKP(bp)));
-    // next_alloc : 현재 블록 R포인트의 다음 블록이 할당 됨/할당 안됨 상태
-    size_t next_alloc = GET_ALLOC(HDRP(NEXT_BLKP(bp)));
-    // 현재 블록의 사이즈
-    size_t size = GET_SIZE(HDRP(bp));
+    unsigned int base = heap_listp + 4;
 
-    if (prev_alloc && next_alloc) { /* Case 1 */
-        front_root(bp);
-        return bp;
-    }
+    while(1){
+        // 현재 블록의 사이즈
+        size_t size = GET_SIZE(HDRP(bp));
 
-    else if (prev_alloc && !next_alloc) { /* Case 2 */
-        size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
-        remove_free(NEXT_BLKP(bp));
-        PUT(HDRP(bp), PACK(size, 0));
-        PUT(FTRP(bp), PACK(size,0));
-        front_root(bp);
-    }
+        unsigned int result = (unsigned int) (bp-base) & size;
 
-    else if (!prev_alloc && next_alloc) { /* Case 3 */
-        remove_free(PREV_BLKP(bp));
-        size += GET_SIZE(HDRP(PREV_BLKP(bp)));
-        PUT(FTRP(bp), PACK(size, 0));
-        PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
-        bp = PREV_BLKP(bp);
-        front_root(bp);
-    }
-    
-    else { /* Case 4 */
-        remove_free(PREV_BLKP(bp));
-        remove_free(NEXT_BLKP(bp));
-        size += GET_SIZE(HDRP(PREV_BLKP(bp))) + GET_SIZE(FTRP(NEXT_BLKP(bp)));
-        PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
-        PUT(FTRP(NEXT_BLKP(bp)), PACK(size, 0));
-        bp = PREV_BLKP(bp);
-        front_root(bp);
+        // 내가 왼쪽에 있을 때,
+        if(result == 0) {
+            if (GET_ALLOC(HDRP(bp+size))==0 && GET_SIZE(HDRP(bp+size)) == size){
+                // printf("1: %d\n", size);
+                remove_free(bp+size);
+                PUT(HDRP(bp),PACK(2*size,0));
+                PUT(FTRP(bp+size),PACK(2*size,0));      
+            }
+            else{
+                front_root(bp);
+                break;
+            }
+        }
+
+        // 내가 오른쪽에 있을 때,
+       else {
+            if (GET_ALLOC(HDRP(bp-size))== 0 && GET_SIZE(HDRP(bp-size)) == size){
+                // printf("1: %d\n", size);
+                remove_free(bp-size);
+                PUT(HDRP(bp-size),PACK(2*size,0));
+                PUT(FTRP(bp),PACK(2*size,0));
+                bp -= size;
+            }
+            else{
+                front_root(bp);
+                break;
+            }
+        }
+        
     }
 
     return bp;
@@ -208,7 +209,7 @@ static void *coalesce(void *bp)
  */
 void *mm_malloc(size_t size)
 {
-    size_t asize; /* Adjusted block size */
+    size_t asize=2*DSIZE; /* Adjusted block size */
     size_t extendsize; /* Amount to extend heap if no fit */
     char *bp;
 
@@ -216,13 +217,13 @@ void *mm_malloc(size_t size)
     if (size == 0)
         return NULL;
 
-    /* Adjust block size to include overhead and alignment reqs. */
-    if (size <= DSIZE)
-        asize = 2*DSIZE;
-    else
-        asize = DSIZE * ((size + (DSIZE) + (DSIZE-1)) / DSIZE);
-
-
+    // /* Adjust block size to include overhead and alignment reqs. */
+    if (size > DSIZE){
+        while (asize < size+DSIZE){
+            asize = asize << 1;
+        }
+    }
+        
     /* Search the free list for a fit */
     if ((bp = find_fit(asize)) != NULL) {
         place(bp, asize);
@@ -257,31 +258,30 @@ static void *find_fit(size_t asize){
     return NULL; /* No fit */
 }
 
-// 값 넣을 때,
+// 값 쪼개서 넣을 때,
 static void place(void *bp, size_t asize)
 {
     size_t csize = GET_SIZE(HDRP(bp));
     // printf("csize : %d\n",csize);
-    // printf("asize : %d\n\n",asize);
-    //쪼개는게 가능
-    if ((csize - asize) >= (2*DSIZE)) { 
-        remove_free(bp);        
-        PUT(HDRP(bp), PACK(asize, 1));
-        PUT(FTRP(bp), PACK(asize, 1));
-        bp = NEXT_BLKP(bp);
-        
-        PUT(HDRP(bp), PACK(csize-asize, 0));
-        PUT(FTRP(bp), PACK(csize-asize, 0));
-        front_root(bp);
-    }
-    //쪼개는게 불가능
-    else {
-        remove_free(bp);
-        PUT(HDRP(bp), PACK(csize, 1));
-        PUT(FTRP(bp), PACK(csize, 1));
+    // printf("asize : %d\n\n",asize); 
+
+    // 조각 낼 블럭 원래 포인터에서 제거
+    remove_free(bp);
+
+    // csize와 asize가 같지 않을 때까지 반복 
+    while(csize!=asize){
+        csize = csize / 2;
+        // 조각난 블럭의 오른쪽
+        PUT(HDRP(bp+csize), PACK(csize, 0));
+        PUT(FTRP(bp+csize), PACK(csize, 0));   
+        front_root(bp+csize);
     }
 
+    // asize인 경우 나눠진 조각을 사용으로 할당
+    PUT(HDRP(bp), PACK(asize, 1));
+    PUT(FTRP(bp), PACK(asize, 1));
 }
+
 // root 붙여주기
 void front_root(void* bp){
     int temp = Block_size(GET_SIZE(HDRP(bp)));
@@ -298,7 +298,7 @@ void front_root(void* bp){
 void remove_free(void* bp) {
     int temp = Block_size(GET_SIZE(HDRP(bp)));
     root = free_lists[temp];
-k
+
     if (bp!=root){
         PUT_NEXT_Addr(GET_PREV_Addr(bp),GET_NEXT_Addr(bp));
         // 삭제 했는데 남은게 NULL 인 경우 
@@ -338,7 +338,7 @@ void *mm_realloc(void *ptr, size_t size)
 int Block_size(size_t asize){
     int idx = 0;
     for (int i=4; i<LISTLIMIT;i++){
-        if (asize < 1<<i){
+        if (asize <= 1<<i){
             break;
         }
         idx++;
